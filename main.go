@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 )
 
@@ -89,22 +90,13 @@ func broadcast(in <-chan int, out ...chan<- int) {
 
 func distribute(in <-chan int, out ...chan<- int) {
 	go func() {
-		var wg sync.WaitGroup
 		for n := range in {
-			next := make(chan struct{})
-			wg.Add(len(out))
-			for _, och := range out {
-				go func(o chan<- int, n int, next chan struct{}) {
-					select {
-					case <-next:
-					case o <- n:
-						next <- struct{}{}
-					}
-					wg.Done()
-				}(och, n, next)
+			cases := make([]reflect.SelectCase, len(out))
+			for i, ch := range out {
+				cases[i] = reflect.SelectCase{Dir: reflect.SelectSend, Chan: reflect.ValueOf(ch), Send: reflect.ValueOf(n)}
 			}
+			reflect.Select(cases)
 		}
-		wg.Wait()
 		for _, och := range out {
 			close(och)
 		}
@@ -114,7 +106,7 @@ func distribute(in <-chan int, out ...chan<- int) {
 func main() {
 	out1 := make(chan int)
 	out2 := make(chan int)
-	distribute(gen(1, 2), out1, out2)
+	distribute(gen(1, 10), out1, out2)
 	out := merge(sq(out1), even(out2))
 
 	for n := range out {
